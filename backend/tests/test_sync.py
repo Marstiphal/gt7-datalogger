@@ -297,7 +297,7 @@ async def test_sweep_uploads_the_document_now_and_once(sync, fake, tmp_path) -> 
     assert body["format"] == track_bundle.BUNDLE_FORMAT
     assert body["meta"]["official"]["official_id"] == "ring-gp"
     assert set(body) == {"format", "version", "meta", "edges", "finish_crossings",
-                         "corners", "sections"}
+                         "corners", "sections", "sectors"}
 
     status = sync.tracks.track_status(slug)
     assert status["status"] == "synced"

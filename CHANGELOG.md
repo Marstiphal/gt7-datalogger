@@ -5,6 +5,42 @@ Notable changes to GT7 Datalogger. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Sector times.** (#22) A new Analysis panel splits every lap of the
+  session at the circuit's sectors, the best of each sector and the best lap
+  in purple. Sector boundaries are placed by hand on the Tracks page beside
+  the corners — each one is where a sector ends — and stored in the track
+  bundle as an optional `sectors` key, so they travel with export, import
+  and sync. A circuit without them is split into thirds of the lap, the
+  boundaries taken from the session's quickest lap as places on the road
+  and found on every other lap, so a wider line does not move a split.
+  `GET /api/analysis/sectors` serves the figures; the comparison reply
+  carries the sectors on the reference lap's axis.
+
+### Changed
+
+- **The Analysis race line map.** (#102) The reference line is coloured by
+  a lens — Inputs, Speed, or Gain / loss against the compared lap — and
+  drawn as one line rather than a trail of dots. The header's row of
+  toggles is a **Layers** menu with a switch for everything the map draws
+  besides the line: the surveyed road, corner numbers, the other laps with
+  their apex speeds and brake points, and the markers. Corner numbers are
+  bare labels beside the apex. Zooming: drag along the line, ⌘/Ctrl +
+  wheel about the pointer, `[` and `]` through the corners, Esc or a
+  double-click out; the window animates, a locator inset shows where on
+  the lap it is, apex badges give every lap's minimum speed through a
+  corner in view, and a callout says what the compared lap did there. A
+  corner's window now starts where the reference began braking for it.
+- **The lap strip.** A bar under the map — the lap unrolled, coloured like
+  the line — carries the track's sectors as S1…Sn buttons (replacing the
+  thirds buttons) and the corner numbers, and the zoom window to drag,
+  resize and slide. A compact copy is pinned over the charts, so the zoom
+  stays in reach with every channel on. The map's borders are drawn as
+  simplified polylines instead of a segment per metre.
+- **The corner report card reads in track order** by default, with a sort
+  switch for biggest loss first.
+
 ### Fixed
 
 - **Race opening laps no longer inflate consistency.** Confirmed lap 1s from

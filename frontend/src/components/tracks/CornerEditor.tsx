@@ -19,7 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EChart } from "@/components/EChart";
 import { api, type TrackBundleDoc } from "@/lib/api";
 import { roadQuads } from "@/lib/surveyGeometry";
-import type { AuthoredCorner, AuthoredSection, OfficialMatch } from "@/lib/types";
+import type { AuthoredCorner, AuthoredSection, AuthoredSector, OfficialMatch } from "@/lib/types";
 import { toast } from "@/store/toasts";
 
 const toastSuccess = (text: string) => toast(text, "success");
@@ -31,12 +31,20 @@ const ROAD_FILL = "rgba(148, 163, 184, 0.16)";
 const APEX_COLOR = "#facc15";
 const SELECTED_COLOR = "#f97316";
 const SECTION_COLOR = "#34d399";
+const SECTOR_COLOR = "#3ec9ff";
 const ENTRY_EXIT_COLOR = "#94a3b8";
 
 // What the next click on the map does. Placing is modal because a corner has
 // three anchors and a phone has one finger — a drag-handle affordance would
 // need a mouse the pit-wall tablet does not have.
-type PlaceMode = "apex" | "move-apex" | "entry" | "exit" | "section-start" | "section-end";
+type PlaceMode =
+  | "apex"
+  | "move-apex"
+  | "entry"
+  | "exit"
+  | "section-start"
+  | "section-end"
+  | "sector-end";
 
 const MODE_HELP: Record<PlaceMode, string> = {
   apex: "Click the map for each corner, in track order. Name them as you go.",
@@ -45,6 +53,7 @@ const MODE_HELP: Record<PlaceMode, string> = {
   exit: "Click where the corner ends — the exit.",
   "section-start": "Click where this section begins.",
   "section-end": "Click where this section ends.",
+  "sector-end": "Click where this sector ends — the split line.",
 };
 
 function blank(n: number): AuthoredCorner {
@@ -68,8 +77,12 @@ export function CornerEditor({
   const [error, setError] = useState("");
   const [corners, setCorners] = useState<AuthoredCorner[]>([]);
   const [sections, setSections] = useState<AuthoredSection[]>([]);
+  // Sector boundaries (#22): where each sector ends; the last runs to the
+  // line. The sector times in Analysis are read off them.
+  const [sectors, setSectors] = useState<AuthoredSector[]>([]);
   const [selected, setSelected] = useState(-1);
   const [selectedSection, setSelectedSection] = useState(-1);
+  const [selectedSector, setSelectedSector] = useState(-1);
   const [mode, setMode] = useState<PlaceMode | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -84,6 +97,7 @@ export function CornerEditor({
         setDoc(d);
         setCorners(d.corners);
         setSections(d.sections);
+        setSectors(d.sectors ?? []);
       })
       .catch((e: Error) => !cancelled && setError(e.message));
     return () => {
@@ -99,7 +113,9 @@ export function CornerEditor({
     if (mode === null) return;
     const at = { x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 };
     setDirty(true);
-    if (mode === "section-start" || mode === "section-end") {
+    if (mode === "sector-end") {
+      setSectors((prev) => prev.map((s, i) => (i !== selectedSector ? s : { ...s, end: at })));
+    } else if (mode === "section-start" || mode === "section-end") {
       setSections((prev) =>
         prev.map((s, i) =>
           i !== selectedSection
@@ -226,6 +242,27 @@ export function CornerEditor({
         z: 4,
       },
       {
+        // Sector boundaries: a bar across the road where each sector ends.
+        id: "sectors",
+        type: "scatter",
+        data: sectors.map((s, i) => ({
+          value: [s.end.x, s.end.z],
+          itemStyle: { color: i === selectedSector ? SELECTED_COLOR : SECTOR_COLOR },
+        })),
+        symbol: "rect",
+        symbolSize: [4, 16],
+        label: {
+          show: true,
+          position: "top",
+          color: "#e5e7eb",
+          fontSize: 10,
+          fontWeight: "bold",
+          formatter: (p) => `S${p.dataIndex + 1}`,
+        },
+        silent: true,
+        z: 4,
+      },
+      {
         id: "apexes",
         type: "scatter",
         data: corners.map((c, i) => ({
@@ -283,7 +320,7 @@ export function CornerEditor({
       tooltip: { show: false },
       series,
     };
-  }, [doc, corners, sections, selected, extents]);
+  }, [doc, corners, sections, sectors, selected, selectedSector, extents]);
 
   const update = (i: number, patch: Partial<AuthoredCorner>) => {
     setCorners((prev) => prev.map((c, j) => (j === i ? { ...c, ...patch } : c)));
@@ -308,9 +345,11 @@ export function CornerEditor({
       const result = await api.bundles.setCorners(slug, {
         corners: corners.map((c, i) => ({ ...c, n: i + 1 })),
         sections: sections.map((s, i) => ({ ...s, n: i + 1 })),
+        sectors: sectors.map((s, i) => ({ ...s, n: i + 1 })),
       });
       setCorners(result.corners);
       setSections(result.sections);
+      setSectors(result.sectors ?? []);
       setDirty(false);
       toastSuccess(`Saved ${result.corners.length} corners on ${result.track}`);
       onSaved();
@@ -536,6 +575,75 @@ export function CornerEditor({
                       e.stopPropagation();  // as above: the row selects on click
                       setSections((prev) => prev.filter((_, j) => j !== i));
                       setSelectedSection(-1);
+                      setMode(null);
+                      setDirty(true);
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t border-edge pt-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold">Sectors</span>
+              <span
+                className="text-xs text-ink-dim"
+                title="Where each sector ends, in track order; the last runs to the start/finish line. GT7 broadcasts none, so the sector times in Analysis are read off these. Without them the lap is split into thirds."
+              >
+                optional · {sectors.length === 0 ? "thirds of the lap" : `${sectors.length + 1} sectors`}
+              </span>
+              <button
+                className="btn ml-auto"
+                onClick={() => {
+                  setSectors((prev) => [...prev, { n: prev.length + 1, name: "", end: { x: 0, z: 0 } }]);
+                  setSelectedSector(sectors.length);
+                  setMode("sector-end");
+                  setDirty(true);
+                }}
+              >
+                Add
+              </button>
+            </div>
+            {sectors.map((s, i) => (
+              <div
+                key={i}
+                className={`mt-1.5 rounded-lg border p-2 ${
+                  i === selectedSector ? "border-accent/60 bg-panel-2" : "border-edge"
+                }`}
+                onClick={() => setSelectedSector(i)}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="w-6 shrink-0 font-tabular text-xs">S{i + 1}</span>
+                  <input
+                    value={s.name}
+                    placeholder="name (optional)"
+                    onChange={(e) => {
+                      setSectors((prev) =>
+                        prev.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)),
+                      );
+                      setDirty(true);
+                    }}
+                    className="min-w-0 flex-1 rounded border border-edge bg-panel-2 px-1.5 py-1 text-xs text-ink"
+                  />
+                  <button
+                    className={`btn ${mode === "sector-end" && i === selectedSector ? "border-accent text-accent" : ""}`}
+                    title="Click the map where this sector ends"
+                    onClick={() => {
+                      setSelectedSector(i);
+                      setMode("sector-end");
+                    }}
+                  >
+                    {s.end.x === 0 && s.end.z === 0 ? "ends at…" : "ends ✓"}
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={(e) => {
+                      e.stopPropagation(); // as above: the row selects on click
+                      setSectors((prev) => prev.filter((_, j) => j !== i));
+                      setSelectedSector(-1);
                       setMode(null);
                       setDirty(true);
                     }}
