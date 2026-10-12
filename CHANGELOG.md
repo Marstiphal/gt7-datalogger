@@ -18,7 +18,10 @@ Notable changes to GT7 Datalogger. The format follows
   boundaries taken from the session's quickest lap as places on the road
   and found on every other lap, so a wider line does not move a split.
   `GET /api/analysis/sectors` serves the figures; the comparison reply
-  carries the sectors on the reference lap's axis.
+  carries the sectors on the reference lap's axis. Track sync sends the
+  boundaries with the bundle; a server that does not keep them yet drops
+  the key, and once it advertises `max_sectors` the next **Sync now**
+  re-sends every bundle that has some, so none placed earlier is lost.
 
 ### Changed
 
