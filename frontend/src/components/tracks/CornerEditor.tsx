@@ -17,9 +17,18 @@ import type * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EChart } from "@/components/EChart";
+import { Select } from "@/components/ui/Select";
 import { api, type TrackBundleDoc } from "@/lib/api";
+import { formatLapTime } from "@/lib/format";
+import { boundariesFromSplits, formatClock, parseClock } from "@/lib/sectorSplits";
 import { roadQuads } from "@/lib/surveyGeometry";
-import type { AuthoredCorner, AuthoredSection, AuthoredSector, OfficialMatch } from "@/lib/types";
+import type {
+  AuthoredCorner,
+  AuthoredSection,
+  AuthoredSector,
+  LapSummary,
+  OfficialMatch,
+} from "@/lib/types";
 import { toast } from "@/store/toasts";
 
 const toastSuccess = (text: string) => toast(text, "success");
@@ -83,6 +92,87 @@ export function CornerEditor({
   const [selected, setSelected] = useState(-1);
   const [selectedSection, setSelectedSection] = useState(-1);
   const [selectedSector, setSelectedSector] = useState(-1);
+  // Boundaries from a lap's split times: the race screen showed S1 as
+  // 0:25 on a 1:00 lap, so the first sector ends where that lap was 25 s
+  // in. Typed as the game shows them, one per sector but the last.
+  const [splitsOpen, setSplitsOpen] = useState(false);
+  const [splitLaps, setSplitLaps] = useState<LapSummary[] | null>(null);
+  const [splitLapId, setSplitLapId] = useState<number | null>(null);
+  const [splitTimes, setSplitTimes] = useState<string[]>(["", ""]);
+  const [splitBusy, setSplitBusy] = useState(false);
+  const [splitError, setSplitError] = useState("");
+
+  useEffect(() => {
+    if (!splitsOpen || splitLaps != null) return;
+    let cancelled = false;
+    api.laps(trackName)
+      .then((all) => {
+        if (cancelled) return;
+        // Newest first; a lap without samples has no path to place on.
+        const laps = all
+          .filter((lap) => (lap.total_ticks ?? 0) > 0 && lap.time_ms > 0)
+          .sort((a, b) => b.id - a.id)
+          .slice(0, 40);
+        setSplitLaps(laps);
+        setSplitLapId((cur) => cur ?? laps[0]?.id ?? null);
+      })
+      .catch(() => !cancelled && setSplitLaps([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [splitsOpen, splitLaps, trackName]);
+
+  const splitLap = splitLaps?.find((lap) => lap.id === splitLapId) ?? null;
+  const splitMs = splitTimes.map((text) => (text.trim() ? parseClock(text) : null));
+  const splitTotal = splitMs.reduce<number>((sum, ms) => sum + (ms ?? 0), 0);
+
+  const placeFromSplits = async () => {
+    if (splitLap == null) return;
+    const times = splitMs.map((ms) => ms ?? 0);
+    if (times.some((ms) => !(ms > 0))) {
+      setSplitError("Every sector needs a time, as the game showed it.");
+      return;
+    }
+    setSplitBusy(true);
+    setSplitError("");
+    try {
+      const detail = await api.lapDetail(splitLap.id);
+      const samples = (detail.samples ?? {}) as Record<string, number[]>;
+      const result = boundariesFromSplits(
+        {
+          t: samples.t ?? [],
+          pos_x: samples.pos_x ?? [],
+          pos_z: samples.pos_z ?? [],
+          time_ms: splitLap.time_ms,
+        },
+        times,
+      );
+      if (!result.ok) {
+        setSplitError(result.error);
+        return;
+      }
+      // Replaces the list: these are the circuit's sectors now. Names
+      // typed for the old ones carry over by position.
+      setSectors((prev) =>
+        result.boundaries.map((b, i) => ({
+          n: i + 1,
+          name: prev[i]?.name ?? "",
+          end: { x: b.x, z: b.z },
+        })),
+      );
+      setSelectedSector(-1);
+      setMode(null);
+      setDirty(true);
+      setSplitsOpen(false);
+      toastSuccess(
+        `${result.boundaries.length + 1} sectors placed from L${splitLap.number} — last sector ${formatClock(result.remainder_ms)}. Save to keep them.`,
+      );
+    } catch (e) {
+      setSplitError((e as Error).message);
+    } finally {
+      setSplitBusy(false);
+    }
+  };
   const [mode, setMode] = useState<PlaceMode | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -351,7 +441,12 @@ export function CornerEditor({
       setSections(result.sections);
       setSectors(result.sectors ?? []);
       setDirty(false);
-      toastSuccess(`Saved ${result.corners.length} corners on ${result.track}`);
+      const saved = result.sectors ?? [];
+      toastSuccess(
+        `Saved ${result.corners.length} corners${
+          saved.length > 0 ? ` and ${saved.length + 1} sectors` : ""
+        } on ${result.track}`,
+      );
       onSaved();
     } catch (e) {
       toastError((e as Error).message);
@@ -513,8 +608,11 @@ export function CornerEditor({
           <div className="border-t border-edge pt-2">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold">Sections</span>
-              <span className="text-xs text-ink-dim" title="Real sectors (#22) need somewhere to come from; GT7 broadcasts none">
-                optional
+              <span
+                className="text-xs text-ink-dim"
+                title="Named stretches of road — the straights, mostly. The lap analysis export times each one and finds the speed trap in it."
+              >
+                optional · named straights
               </span>
               <button
                 className="btn ml-auto"
@@ -596,7 +694,14 @@ export function CornerEditor({
                 optional · {sectors.length === 0 ? "thirds of the lap" : `${sectors.length + 1} sectors`}
               </span>
               <button
-                className="btn ml-auto"
+                className={`btn ml-auto ${splitsOpen ? "border-accent text-accent" : ""}`}
+                title="Place the boundaries from the sector times a race screen showed for one of your laps"
+                onClick={() => setSplitsOpen((open) => !open)}
+              >
+                From splits…
+              </button>
+              <button
+                className="btn"
                 onClick={() => {
                   setSectors((prev) => [...prev, { n: prev.length + 1, name: "", end: { x: 0, z: 0 } }]);
                   setSelectedSector(sectors.length);
@@ -607,6 +712,93 @@ export function CornerEditor({
                 Add
               </button>
             </div>
+            {splitsOpen && (
+              <div className="mt-1.5 space-y-2 rounded-lg border border-accent/40 bg-panel-2 p-2 text-xs">
+                <p className="text-ink-dim">
+                  Pick a lap at this circuit and type each sector's time as the race screen
+                  showed it. The last sector is not typed — it is what is left of the lap —
+                  and each boundary goes where that lap was at that moment.
+                </p>
+                {splitLaps == null && <div className="skeleton h-7" />}
+                {splitLaps != null && splitLaps.length === 0 && (
+                  <div className="text-ink-dim">No recorded laps at this circuit yet.</div>
+                )}
+                {splitLaps != null && splitLaps.length > 0 && (
+                  <>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-ink-dim">lap</span>
+                      <Select
+                        ariaLabel="Lap the split times belong to"
+                        value={String(splitLapId ?? "")}
+                        onValueChange={(v) => setSplitLapId(Number(v))}
+                        options={splitLaps.map((lap) => ({
+                          value: String(lap.id),
+                          label: `#${lap.session_id} · L${lap.number} · ${formatLapTime(lap.time_ms)}${
+                            lap.car_name ? ` · ${lap.car_name}` : ""
+                          }`,
+                        }))}
+                        className="max-w-full px-2 py-1 text-xs"
+                      />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {splitTimes.map((text, i) => (
+                        <label key={i} className="inline-flex items-center gap-1">
+                          <span className="font-tabular text-ink-dim">S{i + 1}</span>
+                          <input
+                            value={text}
+                            placeholder="0:25.123"
+                            inputMode="decimal"
+                            onChange={(e) =>
+                              setSplitTimes((prev) =>
+                                prev.map((x, j) => (j === i ? e.target.value : x)),
+                              )
+                            }
+                            className={`w-[88px] rounded border bg-panel px-1.5 py-1 font-tabular text-xs text-ink ${
+                              text.trim() && splitMs[i] == null ? "border-brake" : "border-edge"
+                            }`}
+                          />
+                        </label>
+                      ))}
+                      <button
+                        className="btn"
+                        onClick={() => setSplitTimes((prev) => [...prev, ""])}
+                        title="One more sector before the last"
+                      >
+                        + sector
+                      </button>
+                      {splitTimes.length > 1 && (
+                        <button
+                          className="btn"
+                          onClick={() => setSplitTimes((prev) => prev.slice(0, -1))}
+                        >
+                          − sector
+                        </button>
+                      )}
+                    </div>
+                    <div className="font-tabular text-ink-dim">
+                      {splitLap && splitTotal > 0
+                        ? splitTotal < splitLap.time_ms
+                          ? `S${splitTimes.length + 1} = ${formatClock(splitLap.time_ms - splitTotal)} of the ${formatLapTime(splitLap.time_ms)} lap`
+                          : `the sectors add up to ${formatClock(splitTotal)}, past the ${formatLapTime(splitLap.time_ms)} lap`
+                        : `${splitTimes.length + 1} sectors`}
+                    </div>
+                    {splitError && <div className="text-brake">{splitError}</div>}
+                    <div className="flex gap-2">
+                      <button
+                        className="btn btn-primary"
+                        disabled={splitBusy || splitLap == null || splitMs.some((ms) => !(ms != null && ms > 0))}
+                        onClick={() => void placeFromSplits()}
+                      >
+                        {splitBusy ? "Placing…" : sectors.length > 0 ? "Replace boundaries" : "Place boundaries"}
+                      </button>
+                      <button className="btn" onClick={() => setSplitsOpen(false)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             {sectors.map((s, i) => (
               <div
                 key={i}

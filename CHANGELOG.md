@@ -9,8 +9,10 @@ Notable changes to GT7 Datalogger. The format follows
 
 - **Sector times.** (#22) A new Analysis panel splits every lap of the
   session at the circuit's sectors, the best of each sector and the best lap
-  in purple. Sector boundaries are placed by hand on the Tracks page beside
-  the corners — each one is where a sector ends — and stored in the track
+  in purple. Sector boundaries are placed on the Tracks page beside the
+  corners — each one is where a sector ends — by clicking the map, or from
+  the sector times a race screen showed for one of your laps, which say
+  where that lap was when each sector ended. They are stored in the track
   bundle as an optional `sectors` key, so they travel with export, import
   and sync. A circuit without them is split into thirds of the lap, the
   boundaries taken from the session's quickest lap as places on the road

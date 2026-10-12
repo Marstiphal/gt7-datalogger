@@ -199,6 +199,14 @@ the start/finish line, so two boundaries make three sectors. GT7 broadcasts
 none, so these are what the [sector times](analysis-view.md#sector-times) in
 Analysis are read off; a circuit without them is split into thirds of the lap.
 
+The quicker way is **From splits…**: some race screens show each
+sector's time as the lap is driven, and a lap then says where its sectors end.
+Pick one of your laps at the circuit, type each sector's time as the game
+showed it (`0:25.123`, or just `25.123`; the last sector is not typed — it is
+what is left of the lap), and **Place boundaries** puts each one where that
+lap was at that moment, to within a tick of the game's clock. Check the map,
+then **Save**.
+
 Corners are stored **in the bundle**, not the database: they are knowledge
 about the circuit, so they travel with export and import, and they are a large
 part of what makes someone else's bundle worth pulling.
