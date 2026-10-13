@@ -46,7 +46,7 @@ import {
 import { lapColor, lapColorMap } from "@/lib/colors";
 import { cornerRange, selectedCorner, stepCorner } from "@/lib/cornerZoom";
 import { brakeMarkers, hasAid, type MapLayerKey } from "@/lib/mapLayers";
-import { LENS_OPTIONS, lensRuns, lensSeries, type MapLens, speedBands } from "@/lib/mapLens";
+import { canDraw, LENS_OPTIONS, lensRuns, lensSeries, type MapLens } from "@/lib/mapLens";
 import { hasTrend } from "@/lib/stint";
 import { formatLapTime, formatSpeed, speedUnit, speedValue, formatTime } from "@/lib/format";
 import {
@@ -768,8 +768,8 @@ export function AnalysisView({ request }: { request: AnalysisRequest }) {
   const lensAvailable = useMemo<Record<MapLens, boolean>>(
     () => ({
       inputs: true,
-      speed: refEntry != null && speedBands(refEntry.series.speed, units) != null,
-      gain: gainSource != null,
+      speed: refEntry != null && canDraw("speed", refEntry.series, units, gainSource),
+      gain: refEntry != null && canDraw("gain", refEntry.series, units, gainSource),
     }),
     [refEntry, units, gainSource],
   );
@@ -1092,7 +1092,7 @@ export function AnalysisView({ request }: { request: AnalysisRequest }) {
                       ? undefined
                       : o.value === "speed"
                         ? "This recording has no speed channel"
-                        : "Needs a second lap to compare with the reference",
+                        : "Needs a second lap with a time delta against the reference",
                   }))}
                 />
               </span>
