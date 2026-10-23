@@ -23,6 +23,7 @@ import { FuelMapPanel } from "@/components/analysis/FuelMapPanel";
 import { GearingPanel, type GearingLap } from "@/components/analysis/GearingPanel";
 import { GGDiagram, ggLap, type GGLap } from "@/components/analysis/GGDiagram";
 import { LapStrip } from "@/components/analysis/LapStrip";
+import { compareSectorTimes, type SectorTiming } from "@/lib/sectorTiming";
 import { LapTimeChart } from "@/components/analysis/LapTimeChart";
 import { LayersMenu } from "@/components/analysis/LayersMenu";
 import { PlaybackBar } from "@/components/analysis/PlaybackBar";
@@ -811,6 +812,21 @@ export function AnalysisView({ request }: { request: AnalysisRequest }) {
     const others = mapLaps.filter((lap) => !lap.isRef);
     return others.find((lap) => lap.id === reportFocusId) ?? others[0] ?? null;
   }, [mapLaps, reportFocusId]);
+  const sectorTimings = useMemo<Record<number, SectorTiming>>(
+    () =>
+      Object.fromEntries(
+        sectors.map((sector) => [
+          sector.n,
+          compareSectorTimes(
+            sector,
+            refEntry?.series,
+            focusLap?.entry.series,
+            focusLap?.entry.aligned !== false,
+          ),
+        ]),
+      ),
+    [sectors, refEntry, focusLap],
+  );
   const gainSource = useMemo(
     () =>
       focusLap?.entry.delta != null
@@ -1272,6 +1288,8 @@ export function AnalysisView({ request }: { request: AnalysisRequest }) {
               onCursorDist={onHoverCursorDist}
               lens={lensData}
               corners={refCorners}
+              sectors={sectors}
+              sectorTimings={sectorTimings}
               focusId={focusLap?.id ?? null}
               units={units}
               maximized={mapMaximized}
@@ -1284,6 +1302,7 @@ export function AnalysisView({ request }: { request: AnalysisRequest }) {
                 length={refLength}
                 runs={stripRuns}
                 sectors={sectors}
+                sectorTimings={sectorTimings}
                 corners={refCorners}
                 zoomRange={shownZoom}
                 onZoomChange={setZoomRange}
@@ -1380,6 +1399,7 @@ export function AnalysisView({ request }: { request: AnalysisRequest }) {
                   length={refLength}
                   runs={stripRuns}
                   sectors={sectors}
+                  sectorTimings={sectorTimings}
                   corners={refCorners}
                   zoomRange={shownZoom}
                   onZoomChange={setZoomRange}
