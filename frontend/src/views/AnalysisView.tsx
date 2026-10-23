@@ -27,6 +27,7 @@ import { LapTimeChart } from "@/components/analysis/LapTimeChart";
 import { LayersMenu } from "@/components/analysis/LayersMenu";
 import { PlaybackBar } from "@/components/analysis/PlaybackBar";
 import { layerKey, RaceLineMap, type MapLap } from "@/components/analysis/RaceLineMap";
+import { SectorComparison } from "@/components/analysis/SectorComparison";
 import { SectorTimes, sectorNote } from "@/components/analysis/SectorTimes";
 import { StackedCharts } from "@/components/analysis/StackedCharts";
 import { StintTrendChart } from "@/components/analysis/StintTrend";
@@ -1553,6 +1554,14 @@ export function AnalysisView({ request }: { request: AnalysisRequest }) {
               data={sectorTimes}
               lapColors={lapColors}
               selected={selected}
+              refLapId={refLap}
+            />
+          </Panel>
+        )}
+        {sectorTimes && sectorTimes.laps.some((lap) => lap.splits_ms != null) && (
+          <Panel title="Sector comparison" meta={sectorNote(sectorTimes)}>
+            <SectorComparison
+              data={sectorTimes}
               refLapId={refLap}
             />
           </Panel>
