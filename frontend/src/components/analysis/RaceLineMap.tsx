@@ -1601,6 +1601,9 @@ function MapBody({
             {"who" in callout && (
               <>
                 <span className="text-ink-faint">·</span>
+                {callout.name.startsWith("T") && (
+                  <span className="text-ink-dim">{callout.who} here</span>
+                )}
                 <span className={callout.deltaColor}>{callout.delta}</span>
                 {callout.brake && (
                   <>
