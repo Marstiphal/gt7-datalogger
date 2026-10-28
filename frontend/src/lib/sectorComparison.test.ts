@@ -95,6 +95,37 @@ describe("sectorComparison", () => {
     expect(result?.sectors[2].deltaMs).toBe(0);
   });
 
+  it("is level when the reference holds every best sector", () => {
+    // Splits are rounded to 0.1 ms, so these add up to 64_583.1 against a
+    // 64_583 lap time, and as floats to a hair more.
+    const level: SectorTimes = {
+      ...data,
+      laps: [
+        { ...data.laps[0], time_ms: 64_583, splits_ms: [24_381.4, 18_942.4, 21_259.3] },
+        { ...data.laps[1], time_ms: 65_000, splits_ms: [24_500, 19_000, 21_500] },
+      ],
+    };
+
+    const result = sectorComparison(level, 101);
+
+    expect(result?.sectors.map((sector) => sector.deltaMs)).toEqual([0, 0, 0]);
+    expect(result?.theoreticalDeltaMs).toBe(0);
+  });
+
+  it("rounds a sector delta under half a millisecond to level, never -0", () => {
+    const close: SectorTimes = {
+      ...data,
+      laps: [
+        { ...data.laps[0], splits_ms: [24_102.3, 18_942, 21_260] },
+        { ...data.laps[1], splits_ms: [24_102.2, 19_254, 20_944] },
+      ],
+    };
+
+    const result = sectorComparison(close, 101);
+
+    expect(Object.is(result?.sectors[0].deltaMs, 0)).toBe(true);
+  });
+
   it("does not substitute a session reference for a guest reference", () => {
     expect(sectorComparison(data, 999)).toBeNull();
     expect(sectorComparison(data, null)).toBeNull();

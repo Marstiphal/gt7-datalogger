@@ -6,7 +6,8 @@ export interface SectorComparisonRow {
   name: string;
   referenceMs: number | null;
   bestMs: number | null;
-  /** Best sector minus reference sector. Negative means faster. */
+  /** Best sector minus reference sector, to the whole millisecond. Negative
+   *  means faster. */
   deltaMs: number | null;
 }
 
@@ -15,7 +16,8 @@ export interface SectorComparisonSummary {
   referenceLapMs: number;
   sectors: SectorComparisonRow[];
   theoreticalBestMs: number | null;
-  /** Theoretical best minus the reference's full lap time. */
+  /** Theoretical best minus the reference's full lap time, to the whole
+   *  millisecond. */
   theoreticalDeltaMs: number | null;
 }
 
@@ -23,6 +25,16 @@ function validTime(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) && value > 0
     ? value
     : null;
+}
+
+/**
+ * A difference to the whole millisecond, the resolution the panel shows.
+ * Splits arrive rounded to 0.1 ms, so a lap's splits add up to its lap time
+ * only to within a fraction of a millisecond: a reference holding every best
+ * sector would otherwise read "+0.000" in red rather than level.
+ */
+function msDifference(a: number, b: number): number {
+  return Math.round(a - b) || 0; // never -0
 }
 
 /**
@@ -56,7 +68,7 @@ export function sectorComparison(
       bestMs,
       deltaMs:
         referenceMs != null && bestMs != null
-          ? bestMs - referenceMs
+          ? msDifference(bestMs, referenceMs)
           : null,
     };
   });
@@ -73,6 +85,6 @@ export function sectorComparison(
     theoreticalDeltaMs:
       theoreticalBestMs == null
         ? null
-        : theoreticalBestMs - referenceLapMs,
+        : msDifference(theoreticalBestMs, referenceLapMs),
   };
 }
