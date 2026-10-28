@@ -10,6 +10,13 @@ type TimedSeries = Parameters<typeof timeAtDist>[0];
 // The extra millimetre absorbs float error in the comparison.
 const BOUNDARY_ROUNDING_M = 0.051;
 
+// How far a lap's own clock may disagree with its reported lap time and
+// still be the clock of that whole lap: the window a salvaged lap has to
+// meet to be believed, and that processing.sectors.splits_ms applies
+// (laps.SALVAGE_TOLERANCE_MS / SALVAGE_TOLERANCE_RATIO).
+const CLOCK_TOLERANCE_MS = 500;
+const CLOCK_TOLERANCE_RATIO = 0.005;
+
 export interface SectorTiming {
   /** Duration for the reference lap, in milliseconds. */
   referenceMs: number | null;
@@ -39,6 +46,22 @@ export interface LineEnds {
 
 const INSIDE_LAP: LineEnds = { start: false, finish: false };
 
+/** Whether the lap's clock ran the whole of its reported lap time.
+ *
+ *  Every recorded lap has a lap time, GT7's for the whole lap, even one the
+ *  logger joined part way round; but that lap's clock starts where the
+ *  recording did, and one that froze through a stop the sampler skipped
+ *  stops short too. The series cannot say where the missing time went (its
+ *  grid starts at 0 whatever the lap covered, holding the first sample's
+ *  clock before it), so a lap whose clock does not reach its lap time has
+ *  no sector times at all, as in processing.sectors.splits_ms. */
+function clockRanTheLap(time: number[], timeMs: number | null | undefined): timeMs is number {
+  if (timeMs == null || !Number.isFinite(timeMs) || timeMs <= 0) return false;
+  const end = time[time.length - 1] * 1000;
+  const tolerance = Math.max(CLOCK_TOLERANCE_MS, timeMs * CLOCK_TOLERANCE_RATIO);
+  return Number.isFinite(end) && Math.abs(timeMs - end) <= tolerance;
+}
+
 /** Time spent between two sector boundaries, using the lap's own clock.
  *
  *  The clock is anchored on the line (t = 0 is the crossing), but the
@@ -46,8 +69,10 @@ const INSIDE_LAP: LineEnds = { start: false, finish: false };
  *  further where packets were dropped: read there, the first and last
  *  sectors come up short and two laps differ by where their samples fell.
  *  A boundary on the line reads 0 at the start and the lap time at the
- *  finish instead, as processing.sectors.splits_ms does; only the
- *  boundaries inside the lap are interpolated. */
+ *  finish instead, as processing.sectors.splits_ms does, so the telemetry
+ *  only has to reach the boundaries inside the lap. A compared lap's last
+ *  sample, put on the reference's axis, can fall a metre or so either side
+ *  of the reference's own; it still finished on the line. */
 export function sectorDurationMs(
   sector: Sector,
   lap: TimedLap | null | undefined,
@@ -63,7 +88,8 @@ export function sectorDurationMs(
     !dist ||
     !time ||
     dist.length < 2 ||
-    time.length !== dist.length
+    time.length !== dist.length ||
+    !clockRanTheLap(time, lap.timeMs)
   ) {
     return null;
   }
@@ -72,32 +98,26 @@ export function sectorDurationMs(
   const end = sector.end_dist;
   const first = dist[0];
   const last = dist[dist.length - 1];
+  const covered = (d: number) =>
+    d >= first - BOUNDARY_ROUNDING_M && d <= last + BOUNDARY_ROUNDING_M;
 
   if (
     !Number.isFinite(start) ||
     !Number.isFinite(end) ||
     end <= start ||
-    start < first - BOUNDARY_ROUNDING_M ||
-    end > last + BOUNDARY_ROUNDING_M
+    (!line.start && !covered(start)) ||
+    (!line.finish && !covered(end))
   ) {
     return null;
   }
 
   // A boundary inside the rounding margin is read at the recorded end.
-  const startMs = line.start
-    ? 0
-    : timeAtDist(series, Math.max(start, first)) * 1000;
-  // Without a lap time there is no clock at the finish to read.
-  const endMs = line.finish
-    ? lap.timeMs
-    : timeAtDist(series, Math.min(end, last)) * 1000;
+  const read = (d: number) =>
+    timeAtDist(series, Math.min(Math.max(d, first), last)) * 1000;
+  const startMs = line.start ? 0 : read(start);
+  const endMs = line.finish ? lap.timeMs : read(end);
 
-  if (
-    endMs == null ||
-    !Number.isFinite(startMs) ||
-    !Number.isFinite(endMs) ||
-    endMs <= startMs
-  ) {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
     return null;
   }
 
