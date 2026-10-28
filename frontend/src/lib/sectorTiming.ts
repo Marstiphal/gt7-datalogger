@@ -3,6 +3,13 @@ import type { Sector } from "@/lib/types";
 
 type TimedSeries = Parameters<typeof timeAtDist>[0];
 
+// Sector boundaries arrive rounded to 0.1 m and the series' distances to
+// 0.01 m, so a complete lap's line can sit up to 0.05 m past its last sample
+// (a lap ending at 300.06 m has its final boundary at 300.1 m). That much is
+// rounding; a boundary any further out is telemetry that stops short of it.
+// The extra millimetre absorbs float error in the comparison.
+const BOUNDARY_ROUNDING_M = 0.051;
+
 export interface SectorTiming {
   /** Duration for the reference lap, in milliseconds. */
   referenceMs: number | null;
@@ -28,19 +35,22 @@ export function sectorDurationMs(
 
   const start = sector.start_dist;
   const end = sector.end_dist;
+  const first = dist[0];
+  const last = dist[dist.length - 1];
 
   if (
     !Number.isFinite(start) ||
     !Number.isFinite(end) ||
     end <= start ||
-    start < dist[0] ||
-    end > dist[dist.length - 1]
+    start < first - BOUNDARY_ROUNDING_M ||
+    end > last + BOUNDARY_ROUNDING_M
   ) {
     return null;
   }
 
-  const startTime = timeAtDist(series!, start);
-  const endTime = timeAtDist(series!, end);
+  // A boundary inside the rounding margin is read at the recorded end.
+  const startTime = timeAtDist(series!, Math.max(start, first));
+  const endTime = timeAtDist(series!, Math.min(end, last));
 
   if (
     !Number.isFinite(startTime) ||

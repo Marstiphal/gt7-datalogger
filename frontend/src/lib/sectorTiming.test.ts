@@ -18,6 +18,26 @@ const sector: Sector = {
 
 const reference = series([0, 10, 20, 30]);
 
+// A lap whose distance grid ends at `last`.
+const lapEndingAt = (last: number, times = [0, 10, 20, 30]): Series =>
+  ({ dist: [0, 100, 200, last], t: times }) as Series;
+
+const firstSector: Sector = {
+  n: 1,
+  name: "Sector 1",
+  start_dist: 0,
+  end_dist: 100,
+  authored: true,
+};
+
+const finalSector: Sector = {
+  n: 3,
+  name: "Sector 3",
+  start_dist: 200,
+  end_dist: 300.1,
+  authored: true,
+};
+
 describe("sectorDurationMs", () => {
   it("calculates the time between sector boundaries", () => {
     expect(sectorDurationMs(sector, reference)).toBe(10_000);
@@ -57,6 +77,31 @@ describe("sectorDurationMs", () => {
   it("rejects zero-duration sectors", () => {
     expect(
       sectorDurationMs(sector, series([0, 10, 10, 30])),
+    ).toBeNull();
+  });
+
+  it("accepts a final boundary rounded past the lap's last sample", () => {
+    // The grid ends at 300.06 m; the boundary, rounded to 0.1 m, at 300.1 m.
+    expect(sectorDurationMs(finalSector, lapEndingAt(300.06))).toBe(10_000);
+    // 0.05 m is as far apart as the two roundings can put them.
+    expect(sectorDurationMs(finalSector, lapEndingAt(300.05))).toBe(10_000);
+    // The same at the start of the lap.
+    expect(
+      sectorDurationMs(firstSector, {
+        dist: [0.04, 100, 200, 300],
+        t: [0, 10, 20, 30],
+      } as Series),
+    ).toBe(10_000);
+  });
+
+  it("rejects telemetry that stops short by more than the rounding", () => {
+    expect(sectorDurationMs(finalSector, lapEndingAt(300.04))).toBeNull();
+    expect(sectorDurationMs(finalSector, lapEndingAt(299))).toBeNull();
+    expect(
+      sectorDurationMs(firstSector, {
+        dist: [0.1, 100, 200, 300],
+        t: [0, 10, 20, 30],
+      } as Series),
     ).toBeNull();
   });
 });
@@ -116,5 +161,29 @@ describe("compareSectorTimes", () => {
     expect(result.approximate).toBe(true);
     expect(result.selectedMs).toBe(11_000);
     expect(result.deltaMs).toBe(1_000);
+  });
+
+  it("keeps the final sector's time and delta on complete laps", () => {
+    const result = compareSectorTimes(
+      finalSector,
+      lapEndingAt(300.06),
+      lapEndingAt(300.08, [0, 10, 20, 31.5]),
+    );
+
+    expect(result.referenceMs).toBe(10_000);
+    expect(result.selectedMs).toBe(11_500);
+    expect(result.deltaMs).toBe(1_500);
+  });
+
+  it("gives no final-sector delta when the compared lap stops short", () => {
+    const result = compareSectorTimes(
+      finalSector,
+      lapEndingAt(300.06),
+      lapEndingAt(299, [0, 10, 20, 31.5]),
+    );
+
+    expect(result.referenceMs).toBe(10_000);
+    expect(result.selectedMs).toBeNull();
+    expect(result.deltaMs).toBeNull();
   });
 });
