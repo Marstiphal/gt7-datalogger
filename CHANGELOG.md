@@ -34,6 +34,12 @@ Notable changes to GT7 Datalogger. The format follows
   lap time. A lap whose clock did not run the whole lap (a recording joined part way
   round, a stop the logger skipped) shows none, and a circuit without authored sectors
   is timed in thirds of the lap, marked `~`. Contributed by @Marstiphal (#166).
+- **Sector comparison and theoretical best.** A new Analysis panel beside Sector times
+  sets the reference lap's sectors against the session's best of each, with the time
+  the reference lost to the best in every sector, and adds the best sectors up into a
+  theoretical best lap and how far it is under the reference. Bests come only from laps
+  that count; a reference from another session has no comparison, since the bests are
+  this session's. Contributed by @Marstiphal (#167).
 
 ### Fixed
 

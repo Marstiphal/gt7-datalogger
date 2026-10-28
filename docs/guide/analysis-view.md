@@ -314,6 +314,22 @@ does one the recording did not time from start to finish — joined part way rou
 through a stop the logger skipped: GT7's lap time covers the whole lap, and there is no
 telling which sector the missing time belongs to.
 
+## Sector comparison
+
+Beside Sector times, this panel sets the reference lap's sectors against the session's
+best of each, in three rows: the **reference**, the **session best sectors** in purple, and the
+**delta**, the best minus the reference — green where another lap was quicker through
+that sector, level (±0.000) where the reference holds the best itself. Added up, the
+best sectors make the **theoretical best**, the lap the session would have had with
+every best sector in one lap, shown with how far it is under the reference's lap time.
+Deltas are to the millisecond.
+
+The bests come from the laps that count, as in Sector times, and the same boundaries
+apply: thirds of the lap where the circuit has none of its own, which the panel notes.
+A reference with no sector times of its own still gets the theoretical best, with dashes
+where its sectors would be; there is no theoretical best while any sector lacks one. A
+reference from another session has no comparison, since the bests are this session's.
+
 ## Race line map
 
 A top-down plot of the reference lap's driven line, coloured by the **lens** picked in
