@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { timeAtDist } from "./playback";
-import { compareSectorTimes, sectorDurationMs } from "./sectorTiming";
+import {
+  compareSectorTimes,
+  sectorDurationMs,
+  timeSectors,
+  type TimedLap,
+} from "./sectorTiming";
 import type { Sector } from "./types";
 
 type Series = Parameters<typeof timeAtDist>[0];
 
-const series = (times: number[]): Series =>
-  ({ dist: [0, 100, 200, 300], t: times }) as Series;
+const lap = (
+  times: number[],
+  timeMs: number | null = null,
+  dist = [0, 100, 200, 300],
+): TimedLap => ({ series: { dist, t: times } as Series, timeMs });
 
 const sector: Sector = {
   n: 2,
@@ -16,11 +24,14 @@ const sector: Sector = {
   authored: true,
 };
 
-const reference = series([0, 10, 20, 30]);
+const reference = lap([0, 10, 20, 30]);
 
 // A lap whose distance grid ends at `last`.
-const lapEndingAt = (last: number, times = [0, 10, 20, 30]): Series =>
-  ({ dist: [0, 100, 200, last], t: times }) as Series;
+const lapEndingAt = (
+  last: number,
+  times = [0, 10, 20, 30],
+  timeMs: number | null = null,
+): TimedLap => lap(times, timeMs, [0, 100, 200, last]);
 
 const firstSector: Sector = {
   n: 1,
@@ -37,6 +48,8 @@ const finalSector: Sector = {
   end_dist: 300.1,
   authored: true,
 };
+
+const toLine = { start: false, finish: true };
 
 describe("sectorDurationMs", () => {
   it("calculates the time between sector boundaries", () => {
@@ -55,13 +68,8 @@ describe("sectorDurationMs", () => {
 
   it("returns null for missing or incomplete telemetry", () => {
     expect(sectorDurationMs(sector, null)).toBeNull();
-    expect(sectorDurationMs(sector, series([]))).toBeNull();
-    expect(
-      sectorDurationMs(sector, {
-        dist: [0, 100, 200, 300],
-        t: [0, 10],
-      } as Series),
-    ).toBeNull();
+    expect(sectorDurationMs(sector, lap([], null, []))).toBeNull();
+    expect(sectorDurationMs(sector, lap([0, 10]))).toBeNull();
   });
 
   it("rejects boundaries outside the recorded distance", () => {
@@ -76,7 +84,7 @@ describe("sectorDurationMs", () => {
 
   it("rejects zero-duration sectors", () => {
     expect(
-      sectorDurationMs(sector, series([0, 10, 10, 30])),
+      sectorDurationMs(sector, lap([0, 10, 10, 30])),
     ).toBeNull();
   });
 
@@ -87,10 +95,7 @@ describe("sectorDurationMs", () => {
     expect(sectorDurationMs(finalSector, lapEndingAt(300.05))).toBe(10_000);
     // The same at the start of the lap.
     expect(
-      sectorDurationMs(firstSector, {
-        dist: [0.04, 100, 200, 300],
-        t: [0, 10, 20, 30],
-      } as Series),
+      sectorDurationMs(firstSector, lap([0, 10, 20, 30], null, [0.04, 100, 200, 300])),
     ).toBe(10_000);
   });
 
@@ -98,10 +103,7 @@ describe("sectorDurationMs", () => {
     expect(sectorDurationMs(finalSector, lapEndingAt(300.04))).toBeNull();
     expect(sectorDurationMs(finalSector, lapEndingAt(299))).toBeNull();
     expect(
-      sectorDurationMs(firstSector, {
-        dist: [0.1, 100, 200, 300],
-        t: [0, 10, 20, 30],
-      } as Series),
+      sectorDurationMs(firstSector, lap([0, 10, 20, 30], null, [0.1, 100, 200, 300])),
     ).toBeNull();
   });
 });
@@ -111,7 +113,7 @@ describe("compareSectorTimes", () => {
     const result = compareSectorTimes(
       sector,
       reference,
-      series([0, 10, 21.25, 32]),
+      lap([0, 10, 21.25, 32]),
     );
 
     expect(result.referenceMs).toBe(10_000);
@@ -124,7 +126,7 @@ describe("compareSectorTimes", () => {
     const result = compareSectorTimes(
       sector,
       reference,
-      series([0, 10, 19.5, 29]),
+      lap([0, 10, 19.5, 29]),
     );
 
     expect(result.deltaMs).toBe(-500);
@@ -142,7 +144,7 @@ describe("compareSectorTimes", () => {
     const result = compareSectorTimes(
       sector,
       reference,
-      series([0, 10, 22, 34]),
+      lap([0, 10, 22, 34]),
       false,
     );
 
@@ -155,7 +157,7 @@ describe("compareSectorTimes", () => {
     const result = compareSectorTimes(
       { ...sector, authored: false },
       reference,
-      series([0, 10, 21, 31]),
+      lap([0, 10, 21, 31]),
     );
 
     expect(result.approximate).toBe(true);
@@ -166,8 +168,10 @@ describe("compareSectorTimes", () => {
   it("keeps the final sector's time and delta on complete laps", () => {
     const result = compareSectorTimes(
       finalSector,
-      lapEndingAt(300.06),
-      lapEndingAt(300.08, [0, 10, 20, 31.5]),
+      lapEndingAt(300.06, [0, 10, 20, 29.99], 30_000),
+      lapEndingAt(300.08, [0, 10, 20, 31.49], 31_500),
+      true,
+      toLine,
     );
 
     expect(result.referenceMs).toBe(10_000);
@@ -178,12 +182,52 @@ describe("compareSectorTimes", () => {
   it("gives no final-sector delta when the compared lap stops short", () => {
     const result = compareSectorTimes(
       finalSector,
-      lapEndingAt(300.06),
-      lapEndingAt(299, [0, 10, 20, 31.5]),
+      lapEndingAt(300.06, [0, 10, 20, 29.99], 30_000),
+      lapEndingAt(299, [0, 10, 20, 31.49], 31_500),
+      true,
+      toLine,
     );
 
     expect(result.referenceMs).toBe(10_000);
     expect(result.selectedMs).toBeNull();
     expect(result.deltaMs).toBeNull();
+  });
+});
+
+describe("timeSectors", () => {
+  const thirds: Sector[] = [1, 2, 3].map((n) => ({
+    n,
+    name: "",
+    start_dist: (n - 1) * 100,
+    end_dist: n * 100,
+    authored: false,
+  }));
+
+  // A 90 s lap whose first and last samples fall half a frame inside it.
+  const sampled = lap([0.0083, 25, 55, 89.9917], 90_000);
+
+  it("runs the lap's clock from 0 at the start to the lap time at the finish", () => {
+    const timings = timeSectors(thirds, sampled, null);
+    const times = [1, 2, 3].map((n) => timings[n].selectedMs);
+
+    // The boundaries inside the lap are still interpolated.
+    expect(times).toEqual([25_000, 30_000, 35_000]);
+    expect(times.reduce((sum, ms) => sum! + ms!, 0)).toBe(90_000);
+  });
+
+  it("gives no delta between laps whose samples fell differently", () => {
+    // The same lap, sampled a frame later against the line at both ends.
+    const other = lap([0.0166, 25, 55, 89.9834], 90_000);
+    const timings = timeSectors(thirds, sampled, other);
+
+    expect([1, 2, 3].map((n) => timings[n].deltaMs)).toEqual([0, 0, 0]);
+  });
+
+  it("leaves the last sector untimed without a lap time", () => {
+    const timings = timeSectors(thirds, lap([0.0083, 25, 55, 89.9917]), null);
+
+    expect(timings[1].selectedMs).toBe(25_000);
+    expect(timings[2].selectedMs).toBe(30_000);
+    expect(timings[3].selectedMs).toBeNull();
   });
 });
