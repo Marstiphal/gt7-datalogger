@@ -23,6 +23,7 @@ import { FuelMapPanel } from "@/components/analysis/FuelMapPanel";
 import { GearingPanel, type GearingLap } from "@/components/analysis/GearingPanel";
 import { GGDiagram, ggLap, type GGLap } from "@/components/analysis/GGDiagram";
 import { LapStrip } from "@/components/analysis/LapStrip";
+import { timeSectors, type SectorTiming } from "@/lib/sectorTiming";
 import { LapTimeChart } from "@/components/analysis/LapTimeChart";
 import { LayersMenu } from "@/components/analysis/LayersMenu";
 import { PlaybackBar } from "@/components/analysis/PlaybackBar";
@@ -811,6 +812,19 @@ export function AnalysisView({ request }: { request: AnalysisRequest }) {
     const others = mapLaps.filter((lap) => !lap.isRef);
     return others.find((lap) => lap.id === reportFocusId) ?? others[0] ?? null;
   }, [mapLaps, reportFocusId]);
+  // Sector 1 starts on the line and the last sector ends on it, where a
+  // lap's clock reads 0 and its reported lap time: the timing takes both.
+  const sectorTimings = useMemo<Record<number, SectorTiming>>(() => {
+    const lapMs = (id: string) =>
+      (laps.find((l) => String(l.id) === id) ?? guests.find((l) => String(l.id) === id))
+        ?.time_ms;
+    return timeSectors(
+      sectors,
+      refEntry && { series: refEntry.series, timeMs: lapMs(String(refLap)) },
+      focusLap && { series: focusLap.entry.series, timeMs: lapMs(focusLap.id) },
+      focusLap?.entry.aligned !== false,
+    );
+  }, [sectors, refEntry, refLap, focusLap, laps, guests]);
   const gainSource = useMemo(
     () =>
       focusLap?.entry.delta != null
@@ -1272,6 +1286,8 @@ export function AnalysisView({ request }: { request: AnalysisRequest }) {
               onCursorDist={onHoverCursorDist}
               lens={lensData}
               corners={refCorners}
+              sectors={sectors}
+              sectorTimings={sectorTimings}
               focusId={focusLap?.id ?? null}
               units={units}
               maximized={mapMaximized}
@@ -1284,6 +1300,7 @@ export function AnalysisView({ request }: { request: AnalysisRequest }) {
                 length={refLength}
                 runs={stripRuns}
                 sectors={sectors}
+                sectorTimings={sectorTimings}
                 corners={refCorners}
                 zoomRange={shownZoom}
                 onZoomChange={setZoomRange}
@@ -1380,6 +1397,7 @@ export function AnalysisView({ request }: { request: AnalysisRequest }) {
                   length={refLength}
                   runs={stripRuns}
                   sectors={sectors}
+                  sectorTimings={sectorTimings}
                   corners={refCorners}
                   zoomRange={shownZoom}
                   onZoomChange={setZoomRange}
