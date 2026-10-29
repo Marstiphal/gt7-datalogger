@@ -810,8 +810,9 @@ async def test_replay_recording_keeps_time_through_a_stop(setup) -> None:
     assert len(live["t"]) == 120
     # 240 packets of one frame each: 239 frames from the first sample to the last.
     assert live["t"][-1] - live["t"][0] == pytest.approx(239 / 60, abs=1e-3)
-    # The stop itself covers no ground.
-    assert live["dist"][60] - live["dist"][59] == pytest.approx(45.0 / 60, abs=0.01)
+    # The stop itself covers no ground: one frame at 45 m/s, not two seconds
+    # of it. dist is stored to 2 decimals, so each end can be 0.005 out.
+    assert live["dist"][60] - live["dist"][59] == pytest.approx(45.0 / 60, abs=0.02)
 
     gt_ms = round(239 / 60 * 1000)
     await proc.feed(make_packet(
