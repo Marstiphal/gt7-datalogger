@@ -791,3 +791,33 @@ async def test_replay_recording_accepts_real_ps5_flags(setup) -> None:
     assert lap.time_ms == recorded_ms
     assert lap.total_ticks == 120
     assert lap.salvaged is True
+
+
+async def test_replay_recording_keeps_time_through_a_stop(setup) -> None:
+    """A replay stopped under the speed gate keeps the stop on its t axis.
+
+    The stopped frames are not sampled, but they are lap time: dropping them
+    left the lap short of GT7's time, and salvage then rejected all of it.
+    """
+    proc, collector = setup
+    proc.replay_recording = True
+
+    for speed, packets in ((45.0, 60), (0.0, 120), (45.0, 60)):
+        for _ in range(packets):
+            await proc.feed(make_packet(current_lap=1, flags=0, speed_mps=speed))
+
+    live = proc.live_lap_samples
+    assert len(live["t"]) == 120
+    # 240 packets of one frame each: 239 frames from the first sample to the last.
+    assert live["t"][-1] - live["t"][0] == pytest.approx(239 / 60, abs=1e-3)
+    # The stop itself covers no ground.
+    assert live["dist"][60] - live["dist"][59] == pytest.approx(45.0 / 60, abs=0.01)
+
+    gt_ms = round(239 / 60 * 1000)
+    await proc.feed(make_packet(
+        current_lap=2, flags=0, speed_mps=45.0, last_lap_time_ms=gt_ms
+    ))
+
+    assert len(collector.laps) == 1
+    assert collector.laps[0].time_ms == gt_ms
+    assert collector.laps[0].salvaged is True
