@@ -598,6 +598,8 @@ class LapProcessor:
     on_session: SessionCallback
     on_race_result: RaceResultCallback | None = None
     min_lap_ticks: int = MIN_LAP_TICKS
+    replay_recording: bool = False
+    _replay_started: bool = False
     # How many console frames a salvage held through a stop waits for driving
     # to resume before it is emitted anyway; 0 emits at once.
     salvage_wait_frames: int = SALVAGE_WAIT_FRAMES
@@ -713,6 +715,10 @@ class LapProcessor:
             await self._emit_held_if_stale(p)
             return
 
+        if self.replay_recording and not self._replay_started:
+            if not p.is_paused and p.current_lap >= 0 and p.speed_mps > 1.0:
+                self._replay_started = True
+
         finish_boundary = (
             self._session is not None
             and p.car_id == self._session.car_id
@@ -720,7 +726,14 @@ class LapProcessor:
             and p.current_lap == self._current_lap + 1
             and 0 < p.total_laps == self._current_lap
         )
-        if (not p.is_on_track or p.is_paused or p.current_lap < 0) and not finish_boundary:
+        if (
+            (
+                (not p.is_on_track and not (self.replay_recording and self._replay_started))
+                or p.is_paused
+                or p.current_lap < 0
+            )
+            and not finish_boundary
+        ):
             # Inactive counters cannot confirm a restart. A matching GT7 time
             # can still vouch for a replay that ended without a line crossing.
             if self._session is not None and not p.is_paused:
@@ -837,7 +850,19 @@ class LapProcessor:
         # the only path that can commit it (#26). The completion rule still
         # requires prev > 0, so a real out-lap's 0 -> 1 boundary behaves
         # exactly as before.
-        if p.is_on_track and not p.is_paused and p.current_lap >= 0 and not past_finish:
+        if (
+            (
+                p.is_on_track
+                or (
+                    self.replay_recording
+                    and self._replay_started
+                    and p.speed_mps > 1.0
+                )
+            )
+            and not p.is_paused
+            and p.current_lap >= 0
+            and not past_finish
+        ):
             if self._current_lap == 0 and len(self._samples["t"]) >= LAP0_MAX_TICKS:
                 # No boundary ever empties the lap-0 buffer; without the cap a
                 # menu streaming stale on-track packets grows it forever.
@@ -862,8 +887,11 @@ class LapProcessor:
 
     async def _handle_lap_boundary(self, p: TelemetryPacket) -> None:
         prev = self._current_lap
+        # Replay laps use the existing salvage path for GT7 time matching
+        # and pre-roll trimming, even when the lap counter advances normally.
         completing = (
-            prev > 0
+            not self.replay_recording
+            and prev > 0
             and p.current_lap == prev + 1
             and p.last_lap_time_ms > 0
             and len(self._samples["t"]) >= self.min_lap_ticks

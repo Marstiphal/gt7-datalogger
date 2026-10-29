@@ -46,6 +46,7 @@ export interface LiveFrame {
 export interface ConnectionStatus {
   source: string;
   recording: boolean;
+  replay_recording: boolean;
   session_id: number | null;
   track_name: string;
   connected: boolean;
