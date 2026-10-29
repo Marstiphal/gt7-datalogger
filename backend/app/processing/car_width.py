@@ -23,6 +23,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.processing.track_bundle import serialized
+
 log = logging.getLogger(__name__)
 
 FORMAT = "gt7-datalogger-car-widths"
@@ -50,6 +52,7 @@ def load(data_dir: Path) -> dict[int, dict[str, Any]]:
         return {}
 
 
+@serialized
 def remember(
     data_dir: Path, car_id: int, width_m: float, samples: int, car_name: str = ""
 ) -> dict[int, dict[str, Any]]:
@@ -68,6 +71,15 @@ def remember(
         "car": car_name,
         "updated_at": datetime.now(UTC).isoformat(),
     }
+    save(data_dir, cars)
+    log.info("axle track remembered for car %s%s: %.3f m (%d samples)",
+             car_id, f" ({car_name})" if car_name else "", width_m, samples)
+    return cars
+
+
+@serialized
+def save(data_dir: Path, cars: dict[int, dict[str, Any]]) -> None:
+    """Write every car's width, replacing the file."""
     doc = {
         "format": FORMAT,
         "version": VERSION,
@@ -78,6 +90,3 @@ def remember(
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(doc, indent=1, sort_keys=True), encoding="utf-8")
     tmp.replace(path)  # atomic: a crash never leaves a half-written file
-    log.info("axle track remembered for car %s%s: %.3f m (%d samples)",
-             car_id, f" ({car_name})" if car_name else "", width_m, samples)
-    return cars

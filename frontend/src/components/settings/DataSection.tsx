@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import type { AdminStats, BackupInventory, BackupPart, PreparedBackup } from "@/lib/types";
 import { BACKUP_PARTS, chosenParts, DEFAULT_PARTS, makeBackup, partDetail, tokensWarning } from "./backup";
 import { INPUT_BASE, mb, SectionPanel, SettingRow, type SectionProps } from "./parts";
+import { RestoreRow } from "./RestoreRow";
 
 // The backup is made by a gated POST and fetched by the link it answers
 // with: a plain link, so the browser's own download UI shows its progress.
@@ -22,7 +23,12 @@ export function DataSection({
   busy,
   run,
   stats,
-}: Pick<SectionProps, "busy" | "run"> & { stats: AdminStats | null }) {
+  onRestored,
+}: Pick<SectionProps, "busy" | "run"> & {
+  stats: AdminStats | null;
+  /** A restore may have changed settings, sync and layouts: the view reloads them. */
+  onRestored: () => void;
+}) {
   const t = useT();
   const BACKUP = t("settings.data.backup");
   const [confirm, setConfirm] = useState("");
@@ -127,6 +133,8 @@ export function DataSection({
           </div>
         </div>
       </SettingRow>
+
+      <RestoreRow busy={busy} run={run} onRestored={onRestored} />
 
       {/* Plain links: the server streams each ZIP as it is written, so the
           browser's own download UI shows progress on a large database. */}
