@@ -7,6 +7,31 @@ Notable changes to GT7 Datalogger. The format follows
 
 ### Added
 
+- **Sportsland SUGO is recognised.** GT7 added SUGO International Racing Course in
+  its October update, after the shipped catalog was generated, so sessions there stayed
+  unnamed. The catalog now carries it (42 tracks, 122 configurations) and the shipped
+  signatures include it, built from the lap zetetos/gt-telemetry published; the
+  re-vendored file also brings the surveys gt7-datalogger-track-data has merged since
+  the last copy: 26 configurations now take their geometry from a surveyed road
+  instead of one captured lap, and 80 are recognised in all.
+
+- **Spanish, Brazilian Portuguese and Japanese.** A language menu in the status bar
+  (and on `/engineer`) sets this device's language; *Auto* follows the browser. The
+  Race Engineer speaks and captions its callouts in it, with that language's own
+  wording rather than a translated English sentence ("*Tiempo de vuelta, un minuto
+  32,5*", "*ラップタイム、1分32秒5*"), and its Voice panel can pick a different
+  **Callout language** from the interface's. Voices are listed for the callout
+  language; a device with none for it speaks the English and keeps the captions
+  translated. The whole interface is translated — every view, the dash and the OBS
+  overlays — except the setting names in **Settings › Advanced**, which the server
+  sends in English; dates follow the language too. A copied overlay or dash URL
+  carries the language (`&lang=es`), since an OBS source has no menu. Callout
+  `message_args` now describe the English sentence exactly — `null` for a clause it
+  leaves out, plus the sector-voice precision, corner names and spoken units — which is
+  what the browser words a translation from; the Analysis coaching notes carry the same
+  `message_key`/`message_args`, and a Tracks layout suggestion its reasoning as
+  `match` (#85).
+
 - **Backup: one file for a whole install.** Settings › Data › **Back up** makes
   `gt7-backup-<date>.zip` from the parts you pick: **Data** (every session and lap, as
   a copy of the database), **Surveys** (track bundles, corrections, survey logs, car
@@ -16,9 +41,22 @@ Notable changes to GT7 Datalogger. The format follows
   database's schema revision and what each part holds. The database is copied a few
   megabytes at a time, so the recorder keeps saving laps while a backup is made, and
   compacted, so deleted laps do not travel with it. The archive is laid out like the
-  data folder; Settings cannot restore one yet, and the guide says how to put it back
-  by hand. The lap exports that used to sit under Back up are now **Export laps**
-  (#161).
+  data folder, so it can also go back by hand. The lap exports that used to sit under
+  Back up are now **Export laps** (#161).
+- **Restore a backup.** Settings › Data › **Restore** uploads a backup, lists the
+  parts it holds with what each would do here, and applies only the ones ticked.
+  **Data** replaces the recordings: the backup's database is unpacked, checked,
+  upgraded if an older version made it, and swapped in with the recorder paused only
+  for the swap; the replaced database is kept as `gt7.db.before-restore-<time>`, and
+  this install's saved settings and layouts stay. A backup from a newer version is
+  refused for Data, with the version it came from. **Surveys** merge as an import
+  does, adding corrections, survey logs and car widths where this install has none;
+  **Install identity** (`source-id.json`) is its own switch, on by default only for
+  an install with no recordings yet. **Config** merges through the same checks as
+  Settings › Advanced, with the per-machine settings (source, console IP, ports,
+  simulator scenario, LAN announcement) listed but off by default. **Dash/OBS**
+  merges by name, and **Tokens** go into `secrets.json` only when ticked. Laps are
+  then re-judged against the surveys here in the background (#161).
 - **Sector times from the Race Engineer.** With **Sector announcements** on
   (Settings › Race Engineer, off by default), the engineer calls each sector as
   you complete it, against the coaching reference: the delta, the sector time
@@ -27,6 +65,35 @@ Notable changes to GT7 Datalogger. The format follows
   row. The same switch sets how many decimals (1 to 3) and whether rounded or
   truncated, for sector and lap time announcements alike. Contributed by
   @Marstiphal (#165).
+- **Sector times on the Analysis lap strip.** Each sector on the lap strip shows its
+  time, for the compared lap or the reference when none is compared, with the delta
+  to the reference beside it; zoomed to a sector, the map's callout shows the same.
+  The times run the lap's own clock from the line to the line, so they add up to the
+  lap time. A lap whose clock did not run the whole lap (a recording joined part way
+  round, a stop the logger skipped) shows none, and a circuit without authored sectors
+  is timed in thirds of the lap, marked `~`. Contributed by @Marstiphal (#166).
+- **Sector comparison and theoretical best.** A new Analysis panel beside Sector times
+  sets the reference lap's sectors against the session's best of each, with the time
+  the reference lost to the best in every sector, and adds the best sectors up into a
+  theoretical best lap and how far it is under the reference. Bests come only from laps
+  that count; a reference from another session has no comparison, since the bests are
+  this session's. Contributed by @Marstiphal (#167).
+
+### Fixed
+
+- **Sector times put time the recording missed into the last sector.** Analysis ›
+  Sector times shares GT7's lap time out by the lap's own clock, and the last sector
+  takes the remainder. A lap the logger joined part way round, or whose clock froze
+  through a stop or an outage it skipped, has a clock that falls short of the lap time,
+  so the sectors where it lost time read short and the last sector long by everything
+  missed — up to six minutes on recorded laps. A lap whose clock does not agree with its lap
+  time, within the window a salvaged lap has to meet (500 ms, or 0.5 % of the lap),
+  now shows no sector times. Partial laps timed line to line keep theirs.
+
+- **The Race Engineer said "ten tenths" for a gap of 950–999 ms.** A lap delta,
+  personal-best gain, pace drop or corner loss chose tenths before rounding, so just
+  under a second came out as "ten tenths slower". It now rounds first and says "one
+  second", like a lap time carries 59.96 s to the next minute.
 
 ## [0.8.1] - 2026-10-21
 

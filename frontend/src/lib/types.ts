@@ -1,5 +1,7 @@
 // Shared API/WebSocket types. Sample columns mirror backend SAMPLE_COLUMNS.
 
+import { t, type MessageKey } from "@/i18n";
+
 export interface LiveFrame {
   on_track: boolean;
   paused: boolean;
@@ -119,18 +121,30 @@ export const EXCLUDE_REASONS = [
 ] as const;
 export type ExcludeReason = (typeof EXCLUDE_REASONS)[number];
 
+const EXCLUDE_REASON_LABELS: Record<ExcludeReason, MessageKey> = {
+  "off-track": "lapStatus.reason.offTrack",
+  contact: "lapStatus.reason.contact",
+  restart: "lapStatus.reason.restart",
+  dirty: "lapStatus.reason.dirty",
+  "pit-out": "lapStatus.reason.pitOut",
+  "race-start": "lapStatus.reason.raceStart",
+};
+
 export function excludeReasonLabel(reason: ExcludeReason | "" | undefined): string {
-  return reason === "race-start" ? "race start" : (reason ?? "");
+  return reason ? t(EXCLUDE_REASON_LABELS[reason]) : "";
+}
+
+/** "excluded · contact", or "excluded" when no reason was given. */
+export function excludedLabel(reason: ExcludeReason | "" | undefined): string {
+  const why = excludeReasonLabel(reason);
+  return why ? t("lapStatus.excludedBecause", { reason: why }) : t("lapStatus.excluded");
 }
 
 /** Why a lap does not count toward bests, in a word or two; null if it does. */
 export function notCountingLabel(lap: LapSummary): string | null {
   if (lap.counts_for_best !== false) return null;
-  if (lap.best_override === false) {
-    const reason = excludeReasonLabel(lap.exclude_reason);
-    return reason ? `excluded · ${reason}` : "excluded";
-  }
-  return "partial";
+  if (lap.best_override === false) return excludedLabel(lap.exclude_reason);
+  return t("lapStatus.partial");
 }
 
 // Driver-aids bitmask stored per tick in the "aids" sample column and sent in
@@ -251,6 +265,13 @@ export interface OfficialMatch {
 export interface OfficialSuggestion extends OfficialMatch {
   confidence: number;
   why: string;
+  // `why` as data, for wording it in the interface language; absent from a
+  // suggestion an older server stored.
+  match?: {
+    name: "exact" | "close";
+    length: "agrees" | "disagrees" | null;
+    measured_m: number | null;
+  };
 }
 
 // A circuit's persisted survey bundle, as listed by /api/track-bundles.
@@ -600,7 +621,8 @@ export interface Sector {
 
 // Every lap of a session split at the same sector boundaries (#22).
 // `splits_ms` is null on a lap that has no sector times: it never passed a
-// boundary (a cut, another layout) or has no lap time.
+// boundary (a cut, another layout), has no lap time, or has a clock that does
+// not account for its lap time (a recording joined part way round).
 export interface SectorTimes {
   session_id: number;
   source: "track" | "thirds" | "none";
@@ -712,6 +734,9 @@ export interface CoachingFinding {
   type: string;
   text: string;
   corner: number | null;
+  // Absent from a server older than the translations (#85).
+  message_key?: string;
+  message_args?: Record<string, unknown>;
 }
 
 export interface CoachingLapNotes {
@@ -1208,6 +1233,75 @@ export interface PreparedBackup {
   created_at: string;
   expires_in_s: number;
   database_bytes: number;
+}
+
+// Restore (#161): a backup uploaded to be put back (POST /api/admin/restore),
+// part by part, and what applying the ticked parts did. Each part says
+// whether the file holds it and, when this install cannot take it, why.
+export type RestoreItem = "data" | "surveys" | "source_id" | "config" | "layouts" | "tokens";
+
+export interface RestorePartState {
+  available: boolean;
+  /** Held, but not something this install can take: why. */
+  refused?: string;
+}
+
+export interface RestoreSetting {
+  key: string;
+  label: string;
+  group: string;
+  value: ConfigValue;
+  /** Describes the machine (console IP, ports, source…): unticked to begin with. */
+  machine: boolean;
+}
+
+export interface RestoreUpload {
+  id: string;
+  name: string;
+  bytes: number;
+  received_at: string;
+  expires_in_s: number;
+  /** The version that made the backup, when, and its database's schema. */
+  app_version: string;
+  created_at: string;
+  alembic_revision: string;
+  free_bytes: number;
+  /** This install as it is now. */
+  here: { sessions: number; laps: number; source_id: boolean; tokens: string[] };
+  parts: {
+    data: RestorePartState & { bytes?: number; sessions?: number; laps?: number; needs_bytes?: number };
+    surveys: RestorePartState & {
+      bytes?: number;
+      bundles?: number;
+      corrections?: number;
+      logs?: number;
+      car_widths?: boolean;
+    };
+    source_id: RestorePartState;
+    config: RestorePartState & { settings?: RestoreSetting[]; skipped?: { key: string; reason: string }[] };
+    layouts: RestorePartState & {
+      layouts?: { name: string; kind: string; replaces: boolean }[];
+      skipped?: { name: string; reason: string }[];
+    };
+    tokens: RestorePartState & { keys?: string[] };
+  };
+}
+
+export interface RestoreReport {
+  data?: { sessions: number; laps: number; revision: string; upgraded_from: string | null; kept: string };
+  surveys?: {
+    bundles: { track: string; slug: string; added_points: number }[];
+    corrections: string[];
+    logs: string[];
+    car_widths: number;
+    failed: { file: string; error: string }[];
+  };
+  source_id?: { source_id: string | null; error?: string };
+  config?: { applied: string[]; skipped: { key: string; reason: string }[]; left: string[] };
+  layouts?: { created: string[]; replaced: string[]; skipped: { name: string; reason: string }[] };
+  tokens?: { applied: string[]; skipped: { key: string; reason: string }[] };
+  /** Circuits whose laps are being re-judged against the surveys here. */
+  rejudging: string[];
 }
 
 export type WsMessage =

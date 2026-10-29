@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app import logbuffer, protocol, settings_registry
-from app.api import admin, backup, layouts, routes, tracks, ws
+from app.api import admin, backup, layouts, restore, routes, tracks, ws
 from app.config import Settings, get_settings
 from app.processing import car_refresh, shared_pull, shared_repo, track_seed
 from app.processing.cars import CarDatabase
@@ -197,9 +197,8 @@ async def refresh_cars_if_stale(
 
 
 # Settings key recording that this installation has had its first pull of
-# the shared track repo. Set once the pull has run (or was not needed); a
-# start that could not read the repo leaves it unset and tries again.
-SHARED_FIRST_PULL_KEY = "shared_bundles_first_pull"
+# the shared track repo; see shared_pull.FIRST_PULL_KEY.
+SHARED_FIRST_PULL_KEY = shared_pull.FIRST_PULL_KEY
 
 
 async def pull_shared_on_first_start(
@@ -283,10 +282,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # must not fail if it never answers. The task is kept so it can be
     # cancelled at shutdown rather than outliving the app it belongs to.
     refresh = asyncio.create_task(refresh_cars_if_stale(settings, repo, cars, stored, log))
-    recheck = asyncio.create_task(recheck_lap_starts(repo, stored, log))
     first_pull = asyncio.create_task(
         pull_shared_on_first_start(settings, repo, service, stored, log)
     )
+
+    def recheck(saved: dict[str, str]) -> None:
+        # Kept on the service: a restore cancels it, as its work is on laps
+        # the restore replaces, and starts it again on the ones it brings.
+        task = asyncio.create_task(recheck_lap_starts(repo, saved, log))
+        service.data_tasks.add(task)
+        task.add_done_callback(service.data_tasks.discard)
+
+    recheck(stored)
+
+    async def database_replaced() -> None:
+        # A restored database (#161) was recorded elsewhere, maybe by an older
+        # version: what this start did for the recordings, done for it.
+        restored = await repo.get_settings()
+        await sync_track_seed(settings, repo, restored, log)
+        await sync_car_inventory(settings, repo, cars, restored, log)
+        recheck(restored)
+
+    service.database_replaced = database_replaced
 
     if settings.source == "udp" and not settings.ps_ip:
         log.info(
@@ -298,7 +315,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Cancelled AND awaited: a task dropped while still pending logs a
     # "Task was destroyed but it is pending" warning on the way out, which
     # looks like a fault in a shutdown that is working correctly.
-    for task in (refresh, recheck, first_pull):
+    for task in (refresh, first_pull, *service.data_tasks):
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
@@ -342,6 +359,44 @@ class LiveCORSMiddleware:
         await cors(scope, receive, send)
 
 
+# API paths outside the request gate: the restore's own requests (one of
+# them is what shuts it) and the backup's, which take turns with a restore
+# through the disk claim and the backup lock instead.
+UNGATED = ("/api/admin/restore", "/api/admin/backup", "/api/backup/")
+
+
+class DrainForRestore:
+    """Every other API request runs inside the service's request gate (#161).
+
+    A restore swaps the database file under the running app. The session
+    gate keeps a connection from straddling the swap, but a request can
+    carry ids from one session to the next — /api/tracks/identify reads the
+    unnamed sessions, matches them off the event loop, then names each by
+    id — and so write a fact about the old database into an unrelated row
+    of the new one. The restore shuts this gate before anything else: the
+    requests in progress finish against the old database, and new ones wait
+    for the swap and then see the new one. WebSockets are not requests and
+    are left alone: they live for hours, and send nothing that writes.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        service = getattr(scope["app"].state, "service", None) if "app" in scope else None
+        path = scope.get("path", "")
+        if (
+            scope["type"] != "http"
+            or service is None
+            or not path.startswith("/api/")
+            or path.startswith(UNGATED)
+        ):
+            await self.app(scope, receive, send)
+            return
+        async with service.requests.entered():
+            await self.app(scope, receive, send)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="GT7 Datalogger",
@@ -355,10 +410,12 @@ def create_app() -> FastAPI:
     # default — sends no CORS headers at all, since both serving modes are
     # same-origin (the SPA is mounted below; the dev server proxies /api and
     # /ws) and a native app needs none.
+    app.add_middleware(DrainForRestore)
     app.add_middleware(LiveCORSMiddleware)
     app.include_router(routes.router)
     app.include_router(admin.router)
     app.include_router(backup.router)
+    app.include_router(restore.router)
     app.include_router(layouts.router)
     app.include_router(tracks.router)
     app.include_router(ws.router)

@@ -11,8 +11,9 @@
 // charts, heavier to re-zoom, get it.
 
 import { useRef } from "react";
+import { useT } from "@/i18n";
 import { cornerAt, cornerRange, selectedCorner, stepCorner } from "@/lib/cornerZoom";
-import { speedUnit, speedValue, type Units } from "@/lib/format";
+import { formatInt, speedUnit, speedValue, type Units } from "@/lib/format";
 import {
   dragRange,
   type Grab,
@@ -25,11 +26,25 @@ import {
 } from "@/lib/lapStrip";
 import type { LensRun } from "@/lib/mapLens";
 import type { Corner, Sector } from "@/lib/types";
+import type { SectorTiming } from "@/lib/sectorTiming";
 
+function formatSectorDuration(ms: number): string {
+  const rounded = Math.round(ms);
+  if (rounded < 60_000) return `${(rounded / 1000).toFixed(3)}s`;
+  const minutes = Math.floor(rounded / 60_000);
+  const seconds = ((rounded % 60_000) / 1000).toFixed(3).padStart(6, "0");
+  return `${minutes}:${seconds}`;
+}
+
+function formatSectorDelta(ms: number): string {
+  const sign = ms > 0 ? "+" : ms < 0 ? "-" : "±";
+  return `${sign}${(Math.abs(ms) / 1000).toFixed(3)}s`;
+}
 export function LapStrip({
   length,
   runs,
   sectors,
+  sectorTimings = {},
   corners,
   zoomRange,
   onZoomChange,
@@ -44,6 +59,7 @@ export function LapStrip({
   /** The bar's colouring, as contiguous runs along the lap. */
   runs: LensRun[];
   sectors: Sector[];
+  sectorTimings?: Record<number, SectorTiming>;
   corners: Corner[];
   zoomRange: Range | null;
   onZoomChange: (range: Range | null) => void;
@@ -55,10 +71,18 @@ export function LapStrip({
   /** The 8 px copy over the charts: no footer, tighter rows. */
   compact?: boolean;
 }) {
+  const t = useT();
   const grab = useRef<{ grab: Grab; range: Range | null; moved: boolean; live: Range | null } | null>(
     null,
   );
   const current = selectedCorner(corners, zoomRange);
+  const currentSector = sectors.find(
+    (sector) =>
+      zoomRange != null &&
+      Math.abs(zoomRange[0] - sector.start_dist) < 1 &&
+      Math.abs(zoomRange[1] - sector.end_dist) < 1,
+  );
+
   const zoomed = !!zoomRange;
   const pct = (m: number) => `${(m / Math.max(length, 1)) * 100}%`;
 
@@ -114,15 +138,18 @@ export function LapStrip({
   const barHeight = compact ? 8 : 12;
   const tickTop = compact ? 28 : 33;
   const stripHeight = compact ? 46 : 50;
-  const navLabel = current
-    ? `T${current.n} · ${current.direction === "L" ? "left" : "right"} · ${Math.round(
-        speedValue(current.min_speed, units),
-      )} ${speedUnit(units)} min`
+  const navLabel = currentSector
+    ? `S${currentSector.n}`
+    : current
+    ? `T${current.n} · ${t(current.direction === "L" ? "map.dir.left" : "map.dir.right")} · ${t("map.minSpeed", {
+        speed: String(Math.round(speedValue(current.min_speed, units))),
+        unit: speedUnit(units),
+      })}`
     : zoomed
-      ? "Custom stretch"
-      : "Full lap";
+      ? t("lapStrip.customStretch")
+      : t("lapStrip.fullLap");
   const [a, b] = zoomRange ?? [0, length];
-  const rangeText = `${Math.round(a).toLocaleString()}–${Math.round(b).toLocaleString()} m`;
+  const rangeText = `${formatInt(a)}–${formatInt(b)} m`;
 
   return (
     <div>
@@ -142,6 +169,13 @@ export function LapStrip({
       >
         {/* Track sectors: S1…Sn above the bar; a click zooms to one. */}
         {sectors.map((s) => {
+          const timing = sectorTimings[s.n];
+          const duration = timing?.selectedMs != null
+            ? `${timing.approximate ? "~" : ""}${formatSectorDuration(timing.selectedMs)}`
+            : null;
+          const delta = timing?.deltaMs != null
+            ? formatSectorDelta(timing.deltaMs)
+            : null;
           const on =
             zoomRange != null &&
             Math.abs(zoomRange[0] - s.start_dist) < 1 &&
@@ -151,13 +185,35 @@ export function LapStrip({
               key={s.n}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={() => onZoomChange([s.start_dist, s.end_dist])}
-              title={s.name ? `${s.name} · ${s.authored ? "the track's sector" : "a third of the lap"}` : s.authored ? "The track's sector — click to zoom to it" : "A third of the lap — click to zoom to it"}
-              className={`absolute top-0 h-3.5 border-l border-divider pl-1.5 text-left font-tabular text-[9.5px] font-semibold uppercase tracking-[.12em] transition-colors hover:text-ink ${
+              title={
+                s.name
+                  ? t(s.authored ? "lapStrip.sectorNamed" : "lapStrip.sectorNamedThird", { name: s.name })
+                  : t(s.authored ? "lapStrip.sectorAuthored" : "lapStrip.sectorThird")
+              }
+              className={`absolute top-0 h-3.5 overflow-hidden whitespace-nowrap border-l border-divider pl-1.5 text-left font-tabular text-[9.5px] font-semibold uppercase tracking-[.12em] transition-colors hover:text-ink ${
                 on ? "text-accent-300" : "text-ink-faint"
               }`}
               style={{ left: pct(s.start_dist), width: pct(s.end_dist - s.start_dist) }}
             >
               S{s.n}
+              {!compact && duration && (
+                <span className="ml-1 font-normal normal-case tracking-normal">
+                  {duration}
+                </span>
+              )}
+              {!compact && delta && (
+                <span
+                  className={`ml-1 font-normal normal-case tracking-normal ${
+                    timing.deltaMs! < 0
+                      ? "text-emerald-400"
+                      : timing.deltaMs! > 0
+                        ? "text-rose-400"
+                        : "text-ink-dim"
+                  }`}
+                >
+                  {delta}
+                </span>
+              )}
             </button>
           );
         })}
@@ -234,7 +290,7 @@ export function LapStrip({
               const next = stepCorner(corners, current, -1);
               if (next) onZoomChange(cornerRange(next));
             }}
-            aria-label="Previous corner"
+            aria-label={t("map.prevCorner")}
             disabled={corners.length === 0}
             className="rounded border border-edge px-[7px] text-ink-dim transition-colors hover:border-edge-bright hover:text-ink disabled:opacity-40"
           >
@@ -245,24 +301,25 @@ export function LapStrip({
               const next = stepCorner(corners, current, 1);
               if (next) onZoomChange(cornerRange(next));
             }}
-            aria-label="Next corner"
+            aria-label={t("map.nextCorner")}
             disabled={corners.length === 0}
             className="rounded border border-edge px-[7px] text-ink-dim transition-colors hover:border-edge-bright hover:text-ink disabled:opacity-40"
           >
             ›
           </button>
           <span className="text-ink-soft">{navLabel}</span>
+
           <span className="font-tabular text-ink-faint">{rangeText}</span>
           {zoomed && (
             <button
               onClick={() => onZoomChange(null)}
               className="rounded border border-edge px-[9px] text-ink-dim transition-colors hover:border-accent hover:text-accent"
             >
-              Full lap
+              {t("lapStrip.fullLap")}
             </button>
           )}
           <span className="ml-auto text-[10px] text-ink-faint">
-            drag the strip to pick a stretch · drag its edges to resize · [ ] steps corners
+            {t("lapStrip.hint")}
           </span>
         </div>
       )}

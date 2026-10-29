@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type { LayoutConfig, LayoutSummary } from "./layout";
 import type {
   AdminSettings,
@@ -25,6 +26,9 @@ import type {
   PreparedBackup,
   RaceEngineerDiagnostics,
   RejudgeResult,
+  RestoreItem,
+  RestoreReport,
+  RestoreUpload,
   SessionSummary,
   SectorTimes,
   StintTrend,
@@ -156,9 +160,7 @@ export class ApiError extends Error {
 async function fail(url: string, resp: Response): Promise<never> {
   if (resp.status === 401 || resp.status === 403) {
     throw new ApiError(
-      resp.status === 401
-        ? "admin token required — set it in Settings › Access"
-        : "admin token rejected — check it in Settings › Access",
+      resp.status === 401 ? t("error.api.tokenRequired") : t("error.api.tokenRejected"),
       resp.status,
     );
   }
@@ -470,6 +472,27 @@ export const api = {
     backupInventory: () => get<BackupInventory>("/api/admin/backup"),
     makeBackup: (parts: BackupPart[]) =>
       send<PreparedBackup>("/api/admin/backup", "POST", { parts }),
+    // Restore (#161): the file goes up as the request body, which the server
+    // streams to disk; the answer lists the parts it holds.
+    uploadRestore: async (file: File): Promise<RestoreUpload> => {
+      const url = `/api/admin/restore?name=${encodeURIComponent(file.name)}`;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/zip" },
+        body: file,
+      });
+      if (!resp.ok) await fail(url, resp);
+      return resp.json() as Promise<RestoreUpload>;
+    },
+    /** The upload waiting to be applied; 404 when there is none. */
+    restoreWaiting: () => get<RestoreUpload>("/api/admin/restore"),
+    applyRestore: (id: string, items: RestoreItem[], machineSettings: string[]) =>
+      send<RestoreReport>(`/api/admin/restore/${encodeURIComponent(id)}`, "POST", {
+        items,
+        machine_settings: machineSettings,
+      }),
+    forgetRestore: (id: string) =>
+      send<{ status: string }>(`/api/admin/restore/${encodeURIComponent(id)}`, "DELETE"),
     updateCars: () =>
       send<{ cars: number; generated: string; sessions_updated: number }>(
         "/api/admin/update-cars",

@@ -17,7 +17,7 @@ Full feature parity with [snipem/gt7dashboard](https://github.com/snipem/gt7dash
 plus additional features like the lens-coloured race line map, sector times, the corner
 report card with braking points, chassis event detection, track auto-identification, the
 overlay builder, a voice race engineer, and webhook notifications — rebuilt with a cleaner
-architecture and a modern UI.
+architecture and a modern UI. In English, Spanish, Brazilian Portuguese and Japanese.
 
 **📖 Full documentation: [jbhoorasingh.github.io/gt7-datalogger](https://jbhoorasingh.github.io/gt7-datalogger/)** —
 per-feature guides, how every calculation works, and the API reference.
@@ -131,7 +131,7 @@ per-feature guides, how every calculation works, and the API reference.
 
 ### Tracks
 
-- **Track auto-identification** — 78 GT7 configurations are recognised out of the box,
+- **Track auto-identification** — 80 GT7 configurations are recognised out of the box,
   from signatures shipped with the app, so a fresh install tags sessions on the first
   lap without you naming anything. Naming a circuit yourself always outranks a shipped
   name, surveyed circuits identify themselves from their borders, and a lap driven the
@@ -205,7 +205,9 @@ per-feature guides, how every calculation works, and the API reference.
   windows, position changes, engine warnings and corner coaching, generated on the
   backend and **spoken by the browser** (`/dash` or `/engineer`) — no speaker, audio
   device, or TTS package needed on the Pi or server. Opt-in per device, one active
-  speaker at a time, with verbosity modes and per-category toggles.
+  speaker at a time, with verbosity modes and per-category toggles. Spoken and
+  captioned in English, Spanish, Brazilian Portuguese or Japanese, each worded in its
+  own language rather than translated from the English sentence.
 - **Webhook / Discord notifications** — personal bests, session summaries, overtakes,
   positions lost, and off-road excursions posted to any webhook URL (Discord URLs get
   a rich embed, others plain JSON), each event individually toggleable.
@@ -215,6 +217,9 @@ per-feature guides, how every calculation works, and the API reference.
   cloud copy) and **live** (the car's position for the service's spectate page). In
   the background with retry and backoff; per-type toggles, all off by default; the
   token is stored apart, masked, and never logged.
+- **Spanish, Brazilian Portuguese and Japanese** — the whole interface and the Race
+  Engineer's callouts. Each browser picks its own from the 🌐 menu in the status bar
+  (*Auto* follows the browser's language); an OBS source takes `?lang=es` on its URL.
 - Configurable units (km/h / mph), persisted in the browser; dark-themed responsive UI
   built on accessible primitives with a colorblind-validated chart palette.
 
@@ -519,14 +524,14 @@ newer channels are simply absent and the charts skip them.
   parser for ESP32 / ESP8266 boards, and a great reference for the packet format.
 - [zetetos/gt-telemetry](https://github.com/zetetos/gt-telemetry) — a Go telemetry
   library, and the source of the **circuit captures the shipped track signatures are
-  built from**: 84 recorded laps, one per configuration, published as world coordinates
+  built from**: 85 recorded laps, one per configuration, published as world coordinates
   under MIT. Their coordinates are GT7's own, so they line up with ours with no
   transform — which is what makes a circuit identify itself on a fresh install before
   anyone has driven or surveyed it. Not affiliated; the captures are used with
   attribution.
 - [jbhoorasingh/gt7-datalogger-track-data](https://github.com/jbhoorasingh/gt7-datalogger-track-data)
   — this project's own track data, kept separate because it changes every time somebody
-  drives: surveyed border geometry for GT7 circuits, the catalog of all 121
+  drives: surveyed border geometry for GT7 circuits, the catalog of all 122
   configurations, and the generated `signatures.json` this app vendors. The app can pull
   contributed bundles from it directly (**Tracks → Import ▾ → Pull from shared**) and,
   connected to a sync service (**Settings › Sync**), push its own surveys back once a run has settled.
